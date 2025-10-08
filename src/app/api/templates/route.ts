@@ -1,5 +1,13 @@
 import { NextResponse } from "next/server";
-import { TEMPLATES_OVERLAY, getJsonFromS3, putJsonToS3, getUserOverlayKey } from "@/lib/s3";
+import {
+  TEMPLATES_OVERLAY,
+  TEMPLATES_PARQUET,
+  TEMPLATES_COLORS,
+  getJsonFromS3,
+  putJsonToS3,
+  getUserOverlayKey,
+  presignedGetUrl,
+} from "@/lib/s3";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 
@@ -26,24 +34,24 @@ export async function GET() {
   if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const overlayKey = getUserOverlayKey(session.user?.email);
   try {
+    // Carica overlay per-utente (e migra se necessario)
     const overlay =
       (await getJsonFromS3<Overlay>(TEMPLATES_OVERLAY.bucket, overlayKey)) || {
         additions: [],
         deletions: [],
         updates: [],
       };
-    // Migrazione: se esistono template in overlay anonimo, spostarli nel tuo overlay e assegnare owner
+    // Migrazione: overlay anonimo -> utente
     const anonKey = getUserOverlayKey(null);
     const anonOverlay = await getJsonFromS3<Overlay>(TEMPLATES_OVERLAY.bucket, anonKey);
     if (anonOverlay && Array.isArray(anonOverlay.additions) && anonOverlay.additions.length) {
       const migrated = (anonOverlay.additions || []).map((t) => ({ ...t, owner: session.user?.email || null }));
       overlay.additions = [...(overlay.additions || []), ...migrated];
       await putJsonToS3(TEMPLATES_OVERLAY.bucket, overlayKey, overlay);
-      // Svuota overlay anonimo per evitare doppioni
       anonOverlay.additions = [];
       await putJsonToS3(TEMPLATES_OVERLAY.bucket, anonKey, anonOverlay);
     }
-    // Migrazione legacy: se esistono template nel vecchio file condiviso (TEMPLATES_OVERLAY.key), spostarli nel tuo overlay
+    // Migrazione legacy: dal file condiviso base alla chiave utente
     const legacyOverlay = await getJsonFromS3<Overlay>(TEMPLATES_OVERLAY.bucket, TEMPLATES_OVERLAY.key);
     if (legacyOverlay && Array.isArray(legacyOverlay.additions) && legacyOverlay.additions.length) {
       const migratedLegacy = (legacyOverlay.additions || []).map((t) => ({
@@ -52,20 +60,19 @@ export async function GET() {
       }));
       overlay.additions = [...(overlay.additions || []), ...migratedLegacy];
       await putJsonToS3(TEMPLATES_OVERLAY.bucket, overlayKey, overlay);
-      // Svuota il file legacy per evitare duplicati
       legacyOverlay.additions = [];
       await putJsonToS3(TEMPLATES_OVERLAY.bucket, TEMPLATES_OVERLAY.key, legacyOverlay);
     }
-    // Mostra solo i template personali (additions), applicando eventuali aggiornamenti di colore
-    const updatesMap = new Map<number, string | null>();
-    for (const u of overlay.updates || []) updatesMap.set(Number(u.id), u.color ?? null);
-    const personal = (overlay.additions || []).map((t) => {
-      const idNum = Number(t.id);
-      return updatesMap.has(idNum) ? { ...t, id: idNum, color: updatesMap.get(idNum) ?? null } : { ...t, id: idNum };
-    });
-    return NextResponse.json({ templates: personal });
-  } catch {
-    return NextResponse.json({ templates: [] });
+
+    // Presigned URL per parquet base (usa env TEMPLATES_BUCKET/TEMPLATES_KEY)
+    const parquetUrl = await presignedGetUrl(TEMPLATES_PARQUET.bucket, TEMPLATES_PARQUET.key);
+    // Colori globali
+    const colors =
+      (await getJsonFromS3<Record<string, string | null>>(TEMPLATES_COLORS.bucket, TEMPLATES_COLORS.key)) || {};
+
+    return NextResponse.json({ parquetUrl, overlay, colors });
+  } catch (e) {
+    return NextResponse.json({ error: "load_failed" }, { status: 500 });
   }
 }
 
