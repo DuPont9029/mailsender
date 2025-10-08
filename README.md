@@ -1,8 +1,20 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+App Next.js con Google OAuth e invio Gmail, templates (con destinatario per ciascun template) su parquet S3 letti via DuckDB-WASM.
 
 ## Getting Started
 
-First, run the development server:
+Setup rapido:
+
+1) Copia `.env.example` in `.env.local` e compila valori (Google OAuth, AWS, bucket e key parquet).
+2) Configura OAuth su Google Cloud Console con scope `https://www.googleapis.com/auth/gmail.send` e callback `NEXTAUTH_URL/api/auth/callback/google`.
+3) Carica `templates.parquet` nel bucket S3. Campi richiesti:
+   - `id` (INT)
+   - `name` (STRING)
+   - `subject` (STRING)
+   - `body` (STRING)
+   - `placeholders` (STRING JSON array opzionale, es: `["firstName","orderId"]`)
+   - `recipient_email` (STRING)
+   - `recipient_name` (STRING opzionale)
+4) Avvio sviluppo:
 
 ```bash
 npm run dev
@@ -14,9 +26,9 @@ pnpm dev
 bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Apri [http://localhost:3000](http://localhost:3000) per vedere l’app.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Homepage con pulsante login Google e link a `/templates`. Dopo login, la pagina `Templates` mostra cards; clic su card apre form segnaposti se presenti, altrimenti invia direttamente al destinatario definito nel template.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
