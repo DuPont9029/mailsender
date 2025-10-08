@@ -26,8 +26,7 @@ function createRawMessage(to: string, subject: string, body: string) {
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  // @ts-ignore
-  const accessToken = session.accessToken as string | undefined;
+  const accessToken = (session as { accessToken?: string }).accessToken as string | undefined;
   if (!accessToken) return NextResponse.json({ error: "no_token" }, { status: 400 });
 
   const { to, subject, body } = await req.json();
@@ -42,7 +41,8 @@ export async function POST(req: Request) {
   try {
     const res = await gmail.users.messages.send({ userId: "me", requestBody: { raw } });
     return NextResponse.json({ ok: true, id: res.data.id });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "send_failed" }, { status: 500 });
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : "send_failed";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
