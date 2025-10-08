@@ -49,20 +49,25 @@ export function getUserOverlayKey(userIdentifier: string | null | undefined): st
   return `${base}/${safe}.json`;
 }
 
-export async function getJsonFromS3<T = any>(bucket: string, key: string): Promise<T | null> {
+export async function getJsonFromS3<T>(bucket: string, key: string): Promise<T | null> {
   try {
     const res = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
     // Node 18+ has transformToString
-    // @ts-ignore
-    const text: string = await res.Body?.transformToString();
+    const body = res.Body;
+    interface TransformToStringBody { transformToString: () => Promise<string>; }
+    const candidate = body as Partial<TransformToStringBody> | undefined;
+    const text: string | undefined =
+      candidate && typeof candidate.transformToString === "function"
+        ? await candidate.transformToString()
+        : undefined;
     if (!text) return null;
     return JSON.parse(text) as T;
-  } catch (e) {
+  } catch {
     return null;
   }
 }
 
-export async function putJsonToS3(bucket: string, key: string, data: any): Promise<void> {
+export async function putJsonToS3(bucket: string, key: string, data: unknown): Promise<void> {
   const body = JSON.stringify(data);
   await s3.send(
     new PutObjectCommand({ Bucket: bucket, Key: key, Body: body, ContentType: "application/json" }),

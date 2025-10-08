@@ -21,7 +21,6 @@ export const authOptions: NextAuthOptions = {
       if (account) {
         // Persist tokens for Gmail API usage
         token.accessToken = account.access_token;
-        // @ts-ignore - refresh_token is only provided sometimes
         if (account.refresh_token) token.refreshToken = account.refresh_token;
       }
       return token;
@@ -29,10 +28,8 @@ export const authOptions: NextAuthOptions = {
     async session({ session, token }) {
       // Expose tokens to session (client calls server that uses them)
       // Do not leak widely; server routes will read via getServerSession.
-      // @ts-ignore
-      session.accessToken = token.accessToken;
-      // @ts-ignore
-      session.refreshToken = token.refreshToken;
+      session.accessToken = token.accessToken as string | undefined;
+      session.refreshToken = token.refreshToken as string | undefined;
       return session;
     },
   },

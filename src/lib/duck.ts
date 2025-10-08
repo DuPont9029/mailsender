@@ -60,13 +60,22 @@ export async function readTemplatesFromParquet(url: string) {
   );
   await conn.close();
   const rows = result.toArray();
-  return rows.map((row: any) => ({
+  interface Row {
+    id: number | string;
+    name: unknown;
+    subject: unknown;
+    body: unknown;
+    placeholders: unknown;
+    toEmail: unknown;
+    toName: unknown;
+  }
+  return rows.map((row: Row) => ({
     id: Number(row.id),
-    name: row.name as string,
-    subject: row.subject as string,
-    body: row.body as string,
+    name: String(row.name),
+    subject: String(row.subject),
+    body: String(row.body),
     placeholders: (row.placeholders as string | null) ?? null,
-    toEmail: row.toEmail as string,
+    toEmail: String(row.toEmail),
     toName: (row.toName as string | null) ?? null,
   }));
 }

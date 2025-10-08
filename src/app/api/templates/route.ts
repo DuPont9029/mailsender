@@ -64,7 +64,7 @@ export async function GET() {
       return updatesMap.has(idNum) ? { ...t, id: idNum, color: updatesMap.get(idNum) ?? null } : { ...t, id: idNum };
     });
     return NextResponse.json({ templates: personal });
-  } catch (e) {
+  } catch {
     return NextResponse.json({ templates: [] });
   }
 }
@@ -124,7 +124,7 @@ export async function PATCH(req: Request) {
   const idNum = Number(id);
   if (!Number.isFinite(idNum)) return NextResponse.json({ error: "invalid_id" }, { status: 400 });
 
-  let overlay =
+  const overlay =
     (await getJsonFromS3<Overlay>(TEMPLATES_OVERLAY.bucket, overlayKey)) || {
       additions: [],
       deletions: [],

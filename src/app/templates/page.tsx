@@ -49,23 +49,37 @@ export default function TemplatesPage() {
         // Lazy import to avoid SSR
         const { readTemplatesFromParquet } = await import("@/lib/duck");
         const base = await readTemplatesFromParquet(data.parquetUrl);
-        const overlay = data.overlay || { additions: [], deletions: [], updates: [] };
-        const colorsMap: Record<string, string | null> = data.colors || {};
-        const deleted = new Set((overlay.deletions || []).map((x: any) => Number(x)));
-        const additions = (overlay.additions || []).map((t: any) => ({ ...t, id: Number(t.id) }));
-        const additionIds = new Set(additions.map((t: any) => Number(t.id)));
-        const filtered = base.filter(
-          (t: any) => !deleted.has(Number(t.id)) && !additionIds.has(Number(t.id))
+        type Overlay = {
+          additions?: Array<Partial<Template> & { id: number | string }>;
+          deletions?: Array<number | string>;
+          updates?: Array<{ id: number | string; color: string | null }>;
+        };
+        const overlay: Overlay = (data.overlay as Overlay) || { additions: [], deletions: [], updates: [] };
+        const colorsMap: Record<string, string | null> = (data.colors as Record<string, string | null>) || {};
+        const deletedIds = new Set((overlay.deletions ?? []).map((x) => Number(x)));
+        const additions: Template[] = (overlay.additions ?? []).map((t) => ({
+          id: Number(t.id),
+          name: String(t.name ?? ""),
+          subject: String(t.subject ?? ""),
+          body: String(t.body ?? ""),
+          placeholders: (t.placeholders as string | null) ?? null,
+          toEmail: String(t.toEmail ?? ""),
+          toName: (t.toName as string | null) ?? null,
+          color: (t.color as string | null) ?? null,
+        }));
+        const additionIds = new Set(additions.map((t) => t.id));
+        const filtered: Template[] = base.filter(
+          (t) => !deletedIds.has(Number(t.id)) && !additionIds.has(Number(t.id))
         );
-        let merged = [...filtered, ...additions];
-        const updates = (overlay.updates || []).map((u: any) => ({ id: Number(u.id), color: u.color ?? null }));
+        let merged: Template[] = [...filtered, ...additions];
+        const updates = (overlay.updates ?? []).map((u) => ({ id: Number(u.id), color: u.color ?? null }));
         if (updates.length) {
           const map = new Map<number, string | null>();
-          for (const u of updates) map.set(Number(u.id), u.color ?? null);
-          merged = merged.map((m: any) => (map.has(Number(m.id)) ? { ...m, color: map.get(Number(m.id)) } : m));
+          for (const u of updates) map.set(u.id, u.color);
+          merged = merged.map((m) => (map.has(m.id) ? { ...m, color: map.get(m.id) ?? null } : m));
         }
         // Applica colori globali
-        const withColors = merged.map((m: any) => {
+        const withColors = merged.map((m) => {
           const key = String(m.id);
           if (Object.prototype.hasOwnProperty.call(colorsMap, key)) {
             return { ...m, color: colorsMap[key] };
