@@ -13,7 +13,7 @@
     "@aws-sdk/s3-request-presigner": "^3.901.0",
     "@duckdb/duckdb-wasm": "^1.30.0",
     "googleapis": "^161.0.0",
-    "next": "15.5.4",
+    "next": "15.5.7",
     "next-auth": "^4.24.11",
     "react": "19.1.0",
     "react-dom": "19.1.0"
