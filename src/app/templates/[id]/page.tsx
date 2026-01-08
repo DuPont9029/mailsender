@@ -47,8 +47,9 @@ export default function TemplateDetailPage() {
         const data = await res.json();
         let list: Template[] = [];
         if (data.templates) list = data.templates as Template[];
-        else if (data.parquetUrl) {
-          const base = await (await import("@/lib/duck")).readTemplatesFromParquet(data.parquetUrl);
+        else if (data.parquetBase64) {
+          const { readTemplatesFromParquetBuffer } = await import("@/lib/duck");
+          const base = await readTemplatesFromParquetBuffer(data.parquetBase64);
           type Overlay = {
             additions?: Array<Partial<Template> & { id: number | string }>;
             deletions?: Array<number | string>;

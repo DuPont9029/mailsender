@@ -6,12 +6,16 @@ export async function getDuckDB() {
   if (!dbPromise) {
     const bundle = await selectBundle({
       mvp: {
-        mainModule: "https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm/dist/duckdb-mvp.wasm",
-        mainWorker: "https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm/dist/duckdb-browser-mvp.worker.js",
+        mainModule:
+          "https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm/dist/duckdb-mvp.wasm",
+        mainWorker:
+          "https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm/dist/duckdb-browser-mvp.worker.js",
       },
       eh: {
-        mainModule: "https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm/dist/duckdb-eh.wasm",
-        mainWorker: "https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm/dist/duckdb-browser-eh.worker.js",
+        mainModule:
+          "https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm/dist/duckdb-eh.wasm",
+        mainWorker:
+          "https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm/dist/duckdb-browser-eh.worker.js",
       },
     });
     let worker: Worker | null = null;
@@ -42,11 +46,20 @@ export async function getDuckDB() {
   return dbPromise!;
 }
 
-export async function readTemplatesFromParquet(url: string) {
+export async function readTemplatesFromParquetBuffer(base64Data: string) {
   const db = await getDuckDB();
   const conn = await db.connect();
-  // Use httpfs to read remote parquet via presigned URL
-  await conn.query("INSTALL httpfs; LOAD httpfs;");
+
+  // Convert base64 to Uint8Array and register as file
+  const binaryString = atob(base64Data);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+
+  const fileName = "templates.parquet";
+  await db.registerFileBuffer(fileName, bytes);
+
   const result = await conn.query(
     `SELECT 
        id, 
@@ -56,7 +69,7 @@ export async function readTemplatesFromParquet(url: string) {
        placeholders, 
        recipient_email AS toEmail, 
        recipient_name AS toName 
-     FROM read_parquet('${url}')`,
+     FROM read_parquet('${fileName}')`
   );
   await conn.close();
   const rows = result.toArray();

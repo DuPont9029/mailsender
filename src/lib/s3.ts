@@ -1,4 +1,8 @@
-import { S3Client, GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
+import {
+  S3Client,
+  GetObjectCommand,
+  PutObjectCommand,
+} from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 const s3 = new S3Client({
@@ -16,7 +20,7 @@ const s3 = new S3Client({
 export async function presignedGetUrl(
   bucket: string,
   key: string,
-  expiresInSeconds = 300,
+  expiresInSeconds = 300
 ) {
   const cmd = new GetObjectCommand({ Bucket: bucket, Key: key });
   return await getSignedUrl(s3, cmd, { expiresIn: expiresInSeconds });
@@ -39,7 +43,9 @@ export const TEMPLATES_COLORS = {
 
 // Overlay per utente: salva template personali e aggiornamenti per ciascun user.
 // Usa email normalizzata o subject claim se disponibile.
-export function getUserOverlayKey(userIdentifier: string | null | undefined): string {
+export function getUserOverlayKey(
+  userIdentifier: string | null | undefined
+): string {
   const base = process.env.TEMPLATES_OVERLAY_KEY || "templates_overlay.json";
   const safe = (userIdentifier || "anon").replace(/[^a-zA-Z0-9_.-]+/g, "_");
   // Formato: templates_overlay/<user>.json se base finisce con .json, altrimenti suffix.
@@ -49,12 +55,19 @@ export function getUserOverlayKey(userIdentifier: string | null | undefined): st
   return `${base}/${safe}.json`;
 }
 
-export async function getJsonFromS3<T>(bucket: string, key: string): Promise<T | null> {
+export async function getJsonFromS3<T>(
+  bucket: string,
+  key: string
+): Promise<T | null> {
   try {
-    const res = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+    const res = await s3.send(
+      new GetObjectCommand({ Bucket: bucket, Key: key })
+    );
     // Node 18+ has transformToString
     const body = res.Body;
-    interface TransformToStringBody { transformToString: () => Promise<string>; }
+    interface TransformToStringBody {
+      transformToString: () => Promise<string>;
+    }
     const candidate = body as Partial<TransformToStringBody> | undefined;
     const text: string | undefined =
       candidate && typeof candidate.transformToString === "function"
@@ -67,9 +80,53 @@ export async function getJsonFromS3<T>(bucket: string, key: string): Promise<T |
   }
 }
 
-export async function putJsonToS3(bucket: string, key: string, data: unknown): Promise<void> {
+export async function putJsonToS3(
+  bucket: string,
+  key: string,
+  data: unknown
+): Promise<void> {
   const body = JSON.stringify(data);
   await s3.send(
-    new PutObjectCommand({ Bucket: bucket, Key: key, Body: body, ContentType: "application/json" }),
+    new PutObjectCommand({
+      Bucket: bucket,
+      Key: key,
+      Body: body,
+      ContentType: "application/json",
+    })
   );
+}
+
+export async function getFileBufferFromS3(
+  bucket: string,
+  key: string
+): Promise<Buffer | null> {
+  try {
+    const res = await s3.send(
+      new GetObjectCommand({ Bucket: bucket, Key: key })
+    );
+    const body = res.Body;
+    if (!body) return null;
+
+    // Handle different response body types
+    if (body instanceof Buffer) {
+      return body;
+    }
+
+    // transformToByteArray is available in newer SDK versions
+    if (typeof body.transformToByteArray === "function") {
+      const byteArray = await body.transformToByteArray();
+      return Buffer.from(byteArray);
+    }
+
+    // Fallback for Node stream
+    const chunks: Uint8Array[] = [];
+    // @ts-expect-error - Body type missing async iterator
+    for await (const chunk of body) {
+      chunks.push(chunk);
+    }
+    return Buffer.concat(chunks);
+  } catch (e) {
+    console.error("Error fetching file from S3:", e);
+    return null;
+  }
 }

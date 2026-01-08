@@ -44,11 +44,11 @@ export default function TemplatesPage() {
       const res = await fetch("/api/templates");
       const data = await res.json();
       if (data.templates) setTemplates(data.templates);
-      else if (data.parquetUrl) {
+      else if (data.parquetBase64) {
         // Client-side read via duckdb-wasm
         // Lazy import to avoid SSR
-        const { readTemplatesFromParquet } = await import("@/lib/duck");
-        const base = await readTemplatesFromParquet(data.parquetUrl);
+        const { readTemplatesFromParquetBuffer } = await import("@/lib/duck");
+        const base = await readTemplatesFromParquetBuffer(data.parquetBase64);
         type Overlay = {
           additions?: Array<Partial<Template> & { id: number | string }>;
           deletions?: Array<number | string>;

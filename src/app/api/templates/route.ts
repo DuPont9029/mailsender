@@ -6,7 +6,7 @@ import {
   getJsonFromS3,
   putJsonToS3,
   getUserOverlayKey,
-  presignedGetUrl,
+  getFileBufferFromS3,
 } from "@/lib/s3";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
@@ -31,29 +31,49 @@ type Overlay = {
 
 export async function GET() {
   const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (!session)
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const overlayKey = getUserOverlayKey(session.user?.email);
   try {
     // Carica overlay per-utente (e migra se necessario)
-    const overlay =
-      (await getJsonFromS3<Overlay>(TEMPLATES_OVERLAY.bucket, overlayKey)) || {
-        additions: [],
-        deletions: [],
-        updates: [],
-      };
+    const overlay = (await getJsonFromS3<Overlay>(
+      TEMPLATES_OVERLAY.bucket,
+      overlayKey
+    )) || {
+      additions: [],
+      deletions: [],
+      updates: [],
+    };
     // Migrazione: overlay anonimo -> utente
     const anonKey = getUserOverlayKey(null);
-    const anonOverlay = await getJsonFromS3<Overlay>(TEMPLATES_OVERLAY.bucket, anonKey);
-    if (anonOverlay && Array.isArray(anonOverlay.additions) && anonOverlay.additions.length) {
-      const migrated = (anonOverlay.additions || []).map((t) => ({ ...t, owner: session.user?.email || null }));
+    const anonOverlay = await getJsonFromS3<Overlay>(
+      TEMPLATES_OVERLAY.bucket,
+      anonKey
+    );
+    if (
+      anonOverlay &&
+      Array.isArray(anonOverlay.additions) &&
+      anonOverlay.additions.length
+    ) {
+      const migrated = (anonOverlay.additions || []).map((t) => ({
+        ...t,
+        owner: session.user?.email || null,
+      }));
       overlay.additions = [...(overlay.additions || []), ...migrated];
       await putJsonToS3(TEMPLATES_OVERLAY.bucket, overlayKey, overlay);
       anonOverlay.additions = [];
       await putJsonToS3(TEMPLATES_OVERLAY.bucket, anonKey, anonOverlay);
     }
     // Migrazione legacy: dal file condiviso base alla chiave utente
-    const legacyOverlay = await getJsonFromS3<Overlay>(TEMPLATES_OVERLAY.bucket, TEMPLATES_OVERLAY.key);
-    if (legacyOverlay && Array.isArray(legacyOverlay.additions) && legacyOverlay.additions.length) {
+    const legacyOverlay = await getJsonFromS3<Overlay>(
+      TEMPLATES_OVERLAY.bucket,
+      TEMPLATES_OVERLAY.key
+    );
+    if (
+      legacyOverlay &&
+      Array.isArray(legacyOverlay.additions) &&
+      legacyOverlay.additions.length
+    ) {
       const migratedLegacy = (legacyOverlay.additions || []).map((t) => ({
         ...t,
         owner: session.user?.email || null,
@@ -61,27 +81,54 @@ export async function GET() {
       overlay.additions = [...(overlay.additions || []), ...migratedLegacy];
       await putJsonToS3(TEMPLATES_OVERLAY.bucket, overlayKey, overlay);
       legacyOverlay.additions = [];
-      await putJsonToS3(TEMPLATES_OVERLAY.bucket, TEMPLATES_OVERLAY.key, legacyOverlay);
+      await putJsonToS3(
+        TEMPLATES_OVERLAY.bucket,
+        TEMPLATES_OVERLAY.key,
+        legacyOverlay
+      );
     }
 
-    // Presigned URL per parquet base (usa env TEMPLATES_BUCKET/TEMPLATES_KEY)
-    const parquetUrl = await presignedGetUrl(TEMPLATES_PARQUET.bucket, TEMPLATES_PARQUET.key);
+    // Get parquet buffer instead of presigned URL
+    const parquetBuffer = await getFileBufferFromS3(
+      TEMPLATES_PARQUET.bucket,
+      TEMPLATES_PARQUET.key
+    );
+    const parquetBase64 = parquetBuffer
+      ? Buffer.from(parquetBuffer).toString("base64")
+      : null;
+
     // Colori globali
     const colors =
-      (await getJsonFromS3<Record<string, string | null>>(TEMPLATES_COLORS.bucket, TEMPLATES_COLORS.key)) || {};
+      (await getJsonFromS3<Record<string, string | null>>(
+        TEMPLATES_COLORS.bucket,
+        TEMPLATES_COLORS.key
+      )) || {};
 
-    return NextResponse.json({ parquetUrl, overlay, colors });
+    return NextResponse.json({ parquetBase64, overlay, colors });
   } catch (e) {
-    return NextResponse.json({ error: "load_failed" }, { status: 500 });
+    console.error("Templates API Error:", e);
+    return NextResponse.json(
+      { error: "load_failed", details: String(e) },
+      { status: 500 }
+    );
   }
 }
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (!session)
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const overlayKey = getUserOverlayKey(session.user?.email);
   const body = await req.json();
-  const { name, subject, body: content, placeholders, toEmail, toName, color } = body || {};
+  const {
+    name,
+    subject,
+    body: content,
+    placeholders,
+    toEmail,
+    toName,
+    color,
+  } = body || {};
   if (!name || !subject || !content || !toEmail)
     return NextResponse.json({ error: "missing_fields" }, { status: 400 });
 
@@ -112,11 +159,13 @@ export async function POST(req: Request) {
     color: color || null,
     owner: session.user?.email || null,
   };
-  const overlay =
-    (await getJsonFromS3<Overlay>(TEMPLATES_OVERLAY.bucket, overlayKey)) || {
-      additions: [],
-      deletions: [],
-    };
+  const overlay = (await getJsonFromS3<Overlay>(
+    TEMPLATES_OVERLAY.bucket,
+    overlayKey
+  )) || {
+    additions: [],
+    deletions: [],
+  };
   overlay.additions.push(addition);
   await putJsonToS3(TEMPLATES_OVERLAY.bucket, overlayKey, overlay);
   return NextResponse.json({ template: addition }, { status: 201 });
@@ -124,19 +173,23 @@ export async function POST(req: Request) {
 
 export async function PATCH(req: Request) {
   const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (!session)
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const overlayKey = getUserOverlayKey(session.user?.email);
   const body = await req.json();
   const { id, color } = body || {};
   const idNum = Number(id);
-  if (!Number.isFinite(idNum)) return NextResponse.json({ error: "invalid_id" }, { status: 400 });
+  if (!Number.isFinite(idNum))
+    return NextResponse.json({ error: "invalid_id" }, { status: 400 });
 
-  const overlay =
-    (await getJsonFromS3<Overlay>(TEMPLATES_OVERLAY.bucket, overlayKey)) || {
-      additions: [],
-      deletions: [],
-      updates: [],
-    };
+  const overlay = (await getJsonFromS3<Overlay>(
+    TEMPLATES_OVERLAY.bucket,
+    overlayKey
+  )) || {
+    additions: [],
+    deletions: [],
+    updates: [],
+  };
 
   // Aggiorna solo template personali (presenti in additions)
   const idx = overlay.additions.findIndex((t) => Number(t.id) === idNum);
@@ -145,7 +198,9 @@ export async function PATCH(req: Request) {
   }
   overlay.additions[idx] = { ...overlay.additions[idx], color: color ?? null };
   // Rimuove eventuali updates per coerenza (non necessari in modalità personale)
-  overlay.updates = (overlay.updates || []).filter((u) => Number(u.id) !== idNum);
+  overlay.updates = (overlay.updates || []).filter(
+    (u) => Number(u.id) !== idNum
+  );
 
   await putJsonToS3(TEMPLATES_OVERLAY.bucket, overlayKey, overlay);
   return NextResponse.json({ ok: true });
@@ -153,28 +208,35 @@ export async function PATCH(req: Request) {
 
 export async function DELETE(req: Request) {
   const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (!session)
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const overlayKey = getUserOverlayKey(session.user?.email);
   const body = await req.json();
   const { id, confirmName } = body || {};
   const idNum = Number(id);
-  if (!Number.isFinite(idNum)) return NextResponse.json({ error: "invalid_id" }, { status: 400 });
-  const overlay =
-    (await getJsonFromS3<Overlay>(TEMPLATES_OVERLAY.bucket, overlayKey)) || {
-      additions: [],
-      deletions: [],
-      updates: [],
-    };
+  if (!Number.isFinite(idNum))
+    return NextResponse.json({ error: "invalid_id" }, { status: 400 });
+  const overlay = (await getJsonFromS3<Overlay>(
+    TEMPLATES_OVERLAY.bucket,
+    overlayKey
+  )) || {
+    additions: [],
+    deletions: [],
+    updates: [],
+  };
   // Elimina solo template personali presenti in additions
   const addIndex = overlay.additions.findIndex((t) => Number(t.id) === idNum);
-  if (addIndex < 0) return NextResponse.json({ error: "not_found" }, { status: 404 });
+  if (addIndex < 0)
+    return NextResponse.json({ error: "not_found" }, { status: 404 });
   const item = overlay.additions[addIndex];
   if (typeof confirmName === "string" && confirmName !== item.name) {
     return NextResponse.json({ error: "confirm_mismatch" }, { status: 400 });
   }
   overlay.additions.splice(addIndex, 1);
   // Pulisce eventuali updates per quell’id
-  overlay.updates = (overlay.updates || []).filter((u) => Number(u.id) !== idNum);
+  overlay.updates = (overlay.updates || []).filter(
+    (u) => Number(u.id) !== idNum
+  );
   await putJsonToS3(TEMPLATES_OVERLAY.bucket, overlayKey, overlay);
   return NextResponse.json({ ok: true });
 }
