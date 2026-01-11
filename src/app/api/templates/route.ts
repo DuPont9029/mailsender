@@ -177,7 +177,7 @@ export async function PATCH(req: Request) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const overlayKey = getUserOverlayKey(session.user?.email);
   const body = await req.json();
-  const { id, color } = body || {};
+  const { id, color, toEmail, toName } = body || {};
   const idNum = Number(id);
   if (!Number.isFinite(idNum))
     return NextResponse.json({ error: "invalid_id" }, { status: 400 });
@@ -196,7 +196,13 @@ export async function PATCH(req: Request) {
   if (idx < 0) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
-  overlay.additions[idx] = { ...overlay.additions[idx], color: color ?? null };
+  const current = overlay.additions[idx];
+  overlay.additions[idx] = {
+    ...current,
+    color: color !== undefined ? color : current.color,
+    toEmail: toEmail !== undefined ? toEmail : current.toEmail,
+    toName: toName !== undefined ? toName : current.toName,
+  };
   // Rimuove eventuali updates per coerenza (non necessari in modalità personale)
   overlay.updates = (overlay.updates || []).filter(
     (u) => Number(u.id) !== idNum
