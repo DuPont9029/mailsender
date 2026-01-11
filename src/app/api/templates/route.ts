@@ -146,7 +146,7 @@ export async function POST(req: Request) {
     try {
       const p = JSON.parse(placeholders);
       if (Array.isArray(p)) {
-        parsed = p.map((x: any) => String(x).trim()).filter(Boolean);
+        parsed = p.map((x: unknown) => String(x).trim()).filter(Boolean);
       }
     } catch {
       /* ignore */
