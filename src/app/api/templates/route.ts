@@ -140,11 +140,27 @@ export async function POST(req: Request) {
       placeholdersStr = null;
     }
   } else if (typeof placeholders === "string") {
-    const arr = placeholders
-      .split(",")
-      .map((x: string) => x.trim())
-      .filter(Boolean);
-    placeholdersStr = arr.length ? JSON.stringify(arr) : null;
+    // Prova a parsare come JSON array prima di splittare per virgola
+    // Questo gestisce il caso di importazione dove placeholders è già una stringa JSON
+    let parsed: string[] | null = null;
+    try {
+      const p = JSON.parse(placeholders);
+      if (Array.isArray(p)) {
+        parsed = p.map((x: any) => String(x).trim()).filter(Boolean);
+      }
+    } catch {
+      /* ignore */
+    }
+
+    if (parsed) {
+      placeholdersStr = JSON.stringify(parsed);
+    } else {
+      const arr = placeholders
+        .split(",")
+        .map((x: string) => x.trim())
+        .filter(Boolean);
+      placeholdersStr = arr.length ? JSON.stringify(arr) : null;
+    }
   }
 
   const id = Number(Date.now());
